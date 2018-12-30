@@ -1,8 +1,5 @@
 const AWS = require('aws-sdk')
 
-const athena = new AWS.Athena({apiVersion: '2017-05-18', convertResponseTypes: false})
-
-
 const getUuidByString = require('uuid-by-string')
 
 const queryExecutionsResults = {}
@@ -13,8 +10,12 @@ class AthenaRequestHandler {
    *
    * @param queryExecutionInput {Athena.StartQueryExecutionInput}
    * @param cacheProps {{expiry,key}}
+   * @param athenaConfig {Athena.ClientConfiguration}
    */
-  constructor(queryExecutionInput, cacheProps) {
+  constructor(queryExecutionInput, cacheProps, athenaConfig) {
+    let conf = Object.assign(athenaConfig || {}, {apiVersion: '2017-05-18', convertResponseTypes: false})
+    this._athena = new AWS.Athena(conf)
+
     /**@type {Athena.StartQueryExecutionInput}*/
     this.queryExecutionInput = queryExecutionInput
 
@@ -48,11 +49,9 @@ class AthenaRequestHandler {
   async runQuery() {
 
     console.log("query : " + this.queryExecutionInput.QueryString)
-    if (this.queryExecutionId) {
-      this.queryExecutionStatus.Status = {State: 'SUCCEEDED'}
-    } else {
+    if (this.queryExecutionId === undefined) {
       try {
-        const data = await athena.startQueryExecution(this.queryExecutionInput).promise()
+        const data = await this.getAthena().startQueryExecution(this.queryExecutionInput).promise()
         this.queryExecutionStatus.Status = {State: 'RUNNING'}
         this.queryExecutionId = data.QueryExecutionId
         // return this.checkStatus()
@@ -68,7 +67,7 @@ class AthenaRequestHandler {
    * @returns {Promise<Athena.QueryExecution>}
    */
   async checkStatus() {
-    const promise = await athena.getQueryExecution({QueryExecutionId: this.queryExecutionId}).promise()
+    const promise = await this.getAthena().getQueryExecution({QueryExecutionId: this.queryExecutionId}).promise()
 
     /**@type {Athena.QueryExecution}*/
     this.queryExecutionStatus = promise.QueryExecution
@@ -87,7 +86,7 @@ class AthenaRequestHandler {
       this.queryExecutionStatus = await this.checkStatus()
       console.log(this.queryExecutionStatus.Status)
       const millisecondsToWait = 1000
-      wait(millisecondsToWait)
+      await wait(millisecondsToWait)
     }
 
   }
@@ -97,12 +96,12 @@ class AthenaRequestHandler {
    * @returns {Promise<any[]>}
    */
   async getQueryResults() {
-    this.waitForFinish()
+    await this.waitForFinish()
     if (this.queryExecutionStatus.Status.State === 'SUCCEEDED') {
       queryExecutionsResults[this.queryCacheId] = this.queryExecutionId
       console.log(this.queryExecutionStatus)
 
-      const results = await athena.getQueryResults({QueryExecutionId: this.queryExecutionId}).promise()
+      const results = await this.getAthena().getQueryResults({QueryExecutionId: this.queryExecutionId}).promise()
       return AthenaRequestHandler.parseAthenaDataToJson(results)
     }
   }
@@ -116,7 +115,7 @@ class AthenaRequestHandler {
       queryExecutionsResults[this.queryCacheId] = this.queryExecutionId
       console.log(this.queryExecutionStatus)
 
-      const results = await athena.getQueryResults({QueryExecutionId: this.queryExecutionId}).promise()
+      const results = await this.getAthena().getQueryResults({QueryExecutionId: this.queryExecutionId}).promise()
       return results.ResultSet.Rows
     }
   }
@@ -148,8 +147,8 @@ class AthenaRequestHandler {
    *
    * @returns {Athena}
    */
-  static getAthena() {
-    return athena
+  getAthena() {
+    return this._athena
   }
 
 }
