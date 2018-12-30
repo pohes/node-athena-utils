@@ -82,7 +82,9 @@ class AthenaRequestHandler {
       })
     }
 
-    while (this.queryExecutionStatus.Status.State === 'RUNNING') {
+    while (this.queryExecutionStatus.Status === undefined
+    || this.queryExecutionStatus.Status.State === "QUEUED"
+    || this.queryExecutionStatus.Status.State === 'RUNNING') { //not termination state
       this.queryExecutionStatus = await this.checkStatus()
       console.log(this.queryExecutionStatus.Status)
       const millisecondsToWait = 1000
